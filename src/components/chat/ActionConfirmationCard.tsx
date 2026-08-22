@@ -126,7 +126,7 @@ export function ActionConfirmationCard({ action, onActionHandled }: ActionConfir
             <span className="text-sky-400 font-semibold">{action.payload.ticket_id}</span>
           </div>
         )}
-        {action.payload.credit_amount_inr !== undefined && (
+        {typeof action.payload.credit_amount_inr === "number" && action.payload.credit_amount_inr !== null && (
           <div className="flex items-center justify-between text-slate-300">
             <span className="text-slate-500">Service Credit:</span>
             <span className="text-emerald-400 font-bold">INR {action.payload.credit_amount_inr.toLocaleString()}</span>
