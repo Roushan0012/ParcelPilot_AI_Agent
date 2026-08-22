@@ -25,7 +25,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
           description: "Search query for policy, SLA, cancellation fee, credit rules, or known issues.",
         },
         customer_scope: {
-          type: "string",
+          type: ["string", "null"],
           description: "Optional customer scope: 'general', 'Northstar', 'LumenWorks', 'ACCT-001', 'ACCT-002'.",
         },
       },
@@ -40,24 +40,24 @@ export const AGENT_TOOLS: ToolDefinition[] = [
       type: "object",
       properties: {
         entity: {
-          type: "string",
-          enum: ["orders", "accounts", "tickets", "all_summary", "order_delay_calc"],
+          type: ["string", "null"],
+          enum: ["orders", "accounts", "tickets", "all_summary", "order_delay_calc", null],
           description: "Optional entity type ('orders', 'accounts', 'tickets'). Will be auto-inferred if omitted.",
         },
         order_id: {
-          type: "string",
+          type: ["string", "null"],
           description: "Order ID (e.g. ORD-1001, ORD-2002).",
         },
         account_id: {
-          type: "string",
+          type: ["string", "null"],
           description: "Account ID (e.g. ACCT-001, ACCT-002, ACCT-003, ACCT-004).",
         },
         ticket_id: {
-          type: "string",
+          type: ["string", "null"],
           description: "Ticket ID (e.g. TKT-501, TKT-502, TKT-504).",
         },
         status: {
-          type: "string",
+          type: ["string", "null"],
           description: "Status filter (e.g. BOOKED, PICKED_UP, open, closed).",
         },
       },
@@ -85,32 +85,32 @@ export const AGENT_TOOLS: ToolDefinition[] = [
           description: "Detailed description of the proposed action.",
         },
         account_id: {
-          type: "string",
-          description: "Associated account ID.",
+          type: ["string", "null"],
+          description: "Associated account ID or null if not applicable.",
         },
         ticket_id: {
-          type: "string",
-          description: "Associated ticket ID if applicable.",
+          type: ["string", "null"],
+          description: "Associated ticket ID or null if not applicable.",
         },
         order_id: {
-          type: "string",
-          description: "Associated order ID if applicable.",
+          type: ["string", "null"],
+          description: "Associated order ID or null if not applicable.",
         },
         severity: {
-          type: "string",
-          enum: ["P1", "P2", "P3"],
+          type: ["string", "null"],
+          enum: ["P1", "P2", "P3", null],
           description: "Severity level for escalations.",
         },
         recommended_assignee: {
-          type: "string",
+          type: ["string", "null"],
           description: "Recommended team member or role (e.g. 'CSM Priya Mehta', 'On-call Engineering Lead').",
         },
         credit_amount_inr: {
-          type: "number",
+          type: ["number", "null"],
           description: "Credit amount in INR if applicable.",
         },
         manager_approval_required: {
-          type: "boolean",
+          type: ["boolean", "null"],
           description: "True if individual credit is above INR 1,000 as per SOP rules.",
         },
         reason: {
