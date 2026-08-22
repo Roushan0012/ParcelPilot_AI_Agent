@@ -42,7 +42,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         entity: {
           type: "string",
           enum: ["orders", "accounts", "tickets", "all_summary", "order_delay_calc"],
-          description: "Entity or calculation to query.",
+          description: "Optional entity type ('orders', 'accounts', 'tickets'). Will be auto-inferred if omitted.",
         },
         order_id: {
           type: "string",
@@ -61,7 +61,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
           description: "Status filter (e.g. BOOKED, PICKED_UP, open, closed).",
         },
       },
-      required: ["entity"],
+      required: [],
     },
   },
   {
@@ -178,7 +178,13 @@ export async function executeTool(
   }
 
   if (toolName === "query_account_data") {
-    const { entity, order_id, account_id, ticket_id, status } = args;
+    let { entity, order_id, account_id, ticket_id, status } = args || {};
+
+    if (!entity) {
+      if (ticket_id) entity = "tickets";
+      else if (order_id) entity = "orders";
+      else if (account_id) entity = "accounts";
+    }
 
     if (entity === "orders" || order_id) {
       const orders = await getOrders(auth, { order_id, account_id, status });
