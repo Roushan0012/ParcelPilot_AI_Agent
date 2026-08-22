@@ -1,32 +1,34 @@
-import { AGENT_TOOLS, executeTool } from "./tools";
-import { getSystemPrompt } from "./prompts";
-import { AuthContext } from "../data/db";
-import { ChatMessage, ToolCallEvent, Citation, PendingAction } from "../types";
 import Groq from "groq-sdk";
 import Anthropic from "@anthropic-ai/sdk";
+import { AGENT_TOOLS, executeTool } from "./tools";
+import { getSystemPrompt } from "./prompts";
+import { AgentRunResult, ToolCallEvent, PendingAction, Citation } from "../types";
+import { AuthContext } from "../data/db";
 
-function getGroqClient() {
-  const key = process.env.GROQ_API_KEY || "";
-  return new Groq({ apiKey: key });
+function getGroqClient(): Groq {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY environment variable is not configured.");
+  }
+  return new Groq({ apiKey });
 }
 
-function getAnthropicClient() {
-  const key = process.env.ANTHROPIC_API_KEY || "";
-  return new Anthropic({ apiKey: key });
+function getAnthropicClient(): Anthropic {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY environment variable is not configured.");
+  }
+  return new Anthropic({ apiKey });
 }
 
-export interface AgentRunResult {
-  message: string;
-  toolCalls: ToolCallEvent[];
-  pendingAction?: PendingAction | null;
-  citations: Citation[];
-}
+export const runAgentConversation = runAgentOrchestrator;
+export const runAgent = runAgentOrchestrator;
 
-export async function runAgentConversation(
-  messages: { role: "user" | "assistant" | "system"; content: string }[],
+export async function runAgentOrchestrator(
+  messages: { role: string; content: string }[],
   auth: AuthContext
 ): Promise<AgentRunResult> {
-  const systemPrompt = getSystemPrompt(auth.role, auth.accountId);
+  const systemPrompt = getSystemPrompt(auth.role, auth.accountScope);
   const toolCallsLog: ToolCallEvent[] = [];
   const accumulatedCitations: Citation[] = [];
   let pendingAction: PendingAction | null = null;
@@ -41,27 +43,46 @@ export async function runAgentConversation(
     },
   }));
 
-  // Attempt with Groq (or Anthropic if key has balance)
+  // Build message history
   let conversationMessages: any[] = [
     { role: "system", content: systemPrompt },
     ...messages.map((m) => ({ role: m.role, content: m.content })),
   ];
 
-  const maxSteps = 5;
+  const maxSteps = 6;
   let currentStep = 0;
+  const groq = getGroqClient();
 
   while (currentStep < maxSteps) {
     currentStep++;
 
     try {
-      const groq = getGroqClient();
-      const completion = await groq.chat.completions.create({
-        model: "openai/gpt-oss-120b",
-        messages: conversationMessages,
-        tools: groqTools,
-        tool_choice: "auto",
-        temperature: 0.1,
-      });
+      let completion: any;
+      const candidateModels = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.6-27b"];
+      let lastErr: any = null;
+
+      for (const modelName of candidateModels) {
+        try {
+          completion = await groq.chat.completions.create({
+            model: modelName,
+            messages: conversationMessages,
+            tools: groqTools,
+            tool_choice: "auto",
+            temperature: 0.1,
+          });
+          if (completion) break;
+        } catch (mErr: any) {
+          lastErr = mErr;
+          if (mErr?.status === 429 || mErr?.message?.includes("rate_limit") || mErr?.status === 404) {
+            continue;
+          }
+          throw mErr;
+        }
+      }
+
+      if (!completion && lastErr) {
+        throw lastErr;
+      }
 
       const choice = completion.choices[0];
       const assistantMsg = choice.message;
@@ -124,17 +145,18 @@ export async function runAgentConversation(
           toolCallsLog.push(toolEvent);
         }
       } else {
-        // Final assistant text response
-        return {
-          message: assistantMsg.content || "Completed inquiry.",
-          toolCalls: toolCallsLog,
-          pendingAction,
-          citations: accumulatedCitations,
-        };
+        // Final assistant text response produced directly
+        if (assistantMsg.content && assistantMsg.content.trim().length > 0) {
+          return {
+            message: assistantMsg.content,
+            toolCalls: toolCallsLog,
+            pendingAction,
+            citations: accumulatedCitations,
+          };
+        }
       }
     } catch (err: any) {
       console.error("Agent loop error on step", currentStep, err);
-      // If Groq has an issue, try Anthropic or return safe message
       try {
         return await runAnthropicFallback(messages, systemPrompt, auth, toolCallsLog, accumulatedCitations, pendingAction);
       } catch (anthropicErr) {
@@ -148,8 +170,48 @@ export async function runAgentConversation(
     }
   }
 
+  // If tools were called and we need a final synthesized text response, do a final synthesis call with tool_choice "none"
+  try {
+    const candidateModels = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.6-27b"];
+    let finalCompletion: any;
+
+    for (const modelName of candidateModels) {
+      try {
+        finalCompletion = await groq.chat.completions.create({
+          model: modelName,
+          messages: [
+            ...conversationMessages,
+            {
+              role: "user",
+              content: "Provide a complete, comprehensive, authoritative operational answer addressing all user questions. State the verdict clearly, explain the timeline relative to snapshot (2026-08-16 11:00 IST), cite the exact document and clause, and summarize the required escalation action.",
+            },
+          ],
+          temperature: 0.1,
+        });
+        if (finalCompletion) break;
+      } catch (mErr: any) {
+        if (mErr?.status === 429 || mErr?.message?.includes("rate_limit") || mErr?.status === 404) {
+          continue;
+        }
+        throw mErr;
+      }
+    }
+
+    const finalAnswer = finalCompletion?.choices[0]?.message?.content;
+    if (finalAnswer && finalAnswer.trim().length > 0) {
+      return {
+        message: finalAnswer,
+        toolCalls: toolCallsLog,
+        pendingAction,
+        citations: accumulatedCitations,
+      };
+    }
+  } catch (synthErr) {
+    console.error("Synthesis error:", synthErr);
+  }
+
   return {
-    message: "Completed reasoning across operational records and documents.",
+    message: "Completed operational review. Please check the tool activity events and citations above for details.",
     toolCalls: toolCallsLog,
     pendingAction,
     citations: accumulatedCitations,
@@ -190,15 +252,11 @@ async function runAnthropicFallback(
     tools: anthropicTools,
   });
 
-  let finalText = "";
-  for (const block of response.content) {
-    if (block.type === "text") {
-      finalText += block.text;
-    }
-  }
+  const textBlocks = response.content.filter((b) => b.type === "text");
+  const messageText = textBlocks.map((b: any) => b.text).join("\n\n");
 
   return {
-    message: finalText || "Processed query.",
+    message: messageText || "Inquiry processed successfully.",
     toolCalls: toolCallsLog,
     pendingAction,
     citations,
