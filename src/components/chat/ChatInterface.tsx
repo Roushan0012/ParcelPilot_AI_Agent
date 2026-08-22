@@ -5,6 +5,8 @@ import { ChatMessage, ToolCallEvent, Citation, PendingAction, UserRole } from "@
 import { ToolCallBadge } from "./ToolCallBadge";
 import { ActionConfirmationCard } from "./ActionConfirmationCard";
 import { CitationModal } from "./CitationModal";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { 
   Send, 
   Bot, 
@@ -33,7 +35,7 @@ export function ChatInterface({ role, accountScope, initialPrompt, onClearInitia
     {
       id: "welcome-msg",
       role: "assistant",
-      content: `👋 Hello! I am the **ParcelPilot Internal Operations & Support AI Agent**.\n\nI can help you look up operational records in Postgres, review signed enterprise agreements, calculate service credit entitlements relative to our system snapshot time (**2026-08-16 11:00 IST**), and prepare confirmation-gated escalation actions.\n\nHow can I assist your operations today?`,
+      content: `👋 **Welcome to ParcelPilot Operations Copilot**\n\nI can assist you with:\n- **Contractual terms & policy verification** (Northstar fee waivers, LumenWorks custom credits)\n- **Order tracking & delay calculations** relative to snapshot anchor (**2026-08-16 11:00 IST**)\n- **SLA compliance monitoring & critical incident escalation**\n- **Confirmation-gated operational actions** (service credits, ticket updates)\n\nType your query or choose a prompt from the sidebar to begin.`,
       created_at: new Date().toISOString(),
     },
   ]);
@@ -172,7 +174,7 @@ export function ChatInterface({ role, accountScope, initialPrompt, onClearInitia
             {/* User Message */}
             {m.role === "user" && (
               <div className="flex items-start justify-end gap-3">
-                <div className="max-w-2xl bg-teal-600/90 text-white rounded-2xl rounded-tr-sm px-4 py-3 shadow-md text-xs sm:text-sm leading-relaxed">
+                <div className="max-w-2xl bg-teal-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 shadow-md text-xs sm:text-sm leading-relaxed font-medium">
                   {m.content}
                 </div>
                 <div className="w-8 h-8 rounded-full bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-300 flex-shrink-0">
@@ -201,9 +203,46 @@ export function ChatInterface({ role, accountScope, initialPrompt, onClearInitia
                     </div>
                   )}
 
-                  {/* Main Response Text Card */}
-                  <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl rounded-tl-sm p-4 sm:p-5 text-xs sm:text-sm text-slate-200 shadow-xl leading-relaxed whitespace-pre-wrap">
-                    {m.content}
+                  {/* Main Response Markdown Card */}
+                  <div className="bg-slate-900/90 border border-slate-800/90 rounded-2xl rounded-tl-sm p-4 sm:p-5 text-xs sm:text-sm text-slate-200 shadow-xl leading-relaxed">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        h1: ({ node, ...props }) => <h1 className="text-base font-bold text-slate-100 mt-3 mb-2 border-b border-slate-800 pb-1" {...props} />,
+                        h2: ({ node, ...props }) => <h2 className="text-sm font-bold text-teal-400 mt-3 mb-1.5" {...props} />,
+                        h3: ({ node, ...props }) => <h3 className="text-xs font-semibold text-sky-300 mt-2 mb-1 uppercase tracking-wider font-mono" {...props} />,
+                        p: ({ node, ...props }) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
+                        ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-2 space-y-1 text-slate-300" {...props} />,
+                        ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-2 space-y-1 text-slate-300" {...props} />,
+                        li: ({ node, ...props }) => <li className="leading-relaxed" {...props} />,
+                        strong: ({ node, ...props }) => <strong className="font-semibold text-white" {...props} />,
+                        blockquote: ({ node, ...props }) => (
+                          <blockquote className="border-l-2 border-teal-500/60 pl-3 my-2 text-slate-300 italic bg-slate-950/50 py-1 rounded-r" {...props} />
+                        ),
+                        table: ({ node, ...props }) => (
+                          <div className="overflow-x-auto my-3 rounded-lg border border-slate-800 bg-slate-950/70">
+                            <table className="min-w-full text-xs divide-y divide-slate-800" {...props} />
+                          </div>
+                        ),
+                        thead: ({ node, ...props }) => <thead className="bg-slate-900/80 font-mono text-slate-400 text-[11px]" {...props} />,
+                        th: ({ node, ...props }) => <th className="px-3 py-2 text-left font-semibold" {...props} />,
+                        td: ({ node, ...props }) => <td className="px-3 py-2 whitespace-nowrap text-slate-300 border-t border-slate-850" {...props} />,
+                        code: ({ node, className, children, ...props }: any) => {
+                          const isInline = !className;
+                          return isInline ? (
+                            <code className="px-1.5 py-0.5 rounded bg-slate-950 text-teal-300 font-mono text-[11px] border border-slate-800" {...props}>
+                              {children}
+                            </code>
+                          ) : (
+                            <pre className="p-3 rounded-lg bg-slate-950 overflow-x-auto text-xs text-teal-300 font-mono border border-slate-800 my-2">
+                              <code {...props}>{children}</code>
+                            </pre>
+                          );
+                        },
+                      }}
+                    >
+                      {m.content}
+                    </ReactMarkdown>
                   </div>
 
                   {/* Pending Confirmation Action Card (State Changing Gate) */}
