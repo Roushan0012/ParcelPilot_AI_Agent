@@ -5,11 +5,15 @@ import { ChatMessage, ToolCallEvent, Citation, PendingAction } from "../types";
 import Groq from "groq-sdk";
 import Anthropic from "@anthropic-ai/sdk";
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+function getGroqClient() {
+  const key = process.env.GROQ_API_KEY || "";
+  return new Groq({ apiKey: key });
+}
 
-const groqClient = new Groq({ apiKey: GROQ_API_KEY });
-const anthropicClient = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+function getAnthropicClient() {
+  const key = process.env.ANTHROPIC_API_KEY || "";
+  return new Anthropic({ apiKey: key });
+}
 
 export interface AgentRunResult {
   message: string;
@@ -50,7 +54,8 @@ export async function runAgentConversation(
     currentStep++;
 
     try {
-      const completion = await groqClient.chat.completions.create({
+      const groq = getGroqClient();
+      const completion = await groq.chat.completions.create({
         model: "openai/gpt-oss-120b",
         messages: conversationMessages,
         tools: groqTools,
@@ -63,13 +68,17 @@ export async function runAgentConversation(
 
       // If the model wants to call tools
       if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
-        conversationMessages.push(assistantMsg);
+        conversationMessages.push({
+          role: "assistant",
+          content: assistantMsg.content || null,
+          tool_calls: assistantMsg.tool_calls,
+        });
 
         for (const tc of assistantMsg.tool_calls) {
           const toolName = tc.function.name;
           let toolArgs: any = {};
           try {
-            toolArgs = JSON.parse(tc.function.arguments);
+            toolArgs = typeof tc.function.arguments === "string" ? JSON.parse(tc.function.arguments) : tc.function.arguments;
           } catch (e) {
             toolArgs = {};
           }
@@ -172,7 +181,8 @@ async function runAnthropicFallback(
       content: m.content,
     }));
 
-  const response = await anthropicClient.messages.create({
+  const anthropic = getAnthropicClient();
+  const response = await anthropic.messages.create({
     model: "claude-3-5-sonnet-20241022",
     max_tokens: 1500,
     system: systemPrompt,

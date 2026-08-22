@@ -1,7 +1,9 @@
 import { DocumentChunk } from "@/lib/types";
 import dataset from "../data/dataset.json";
 
-const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY || "";
+function getVoyageKey() {
+  return process.env.VOYAGE_API_KEY || "";
+}
 
 export function cosineSimilarity(vecA: number[], vecB: number[]): number {
   let dotProduct = 0.0;
@@ -17,11 +19,13 @@ export function cosineSimilarity(vecA: number[], vecB: number[]): number {
 }
 
 export async function getQueryEmbedding(text: string): Promise<number[] | null> {
+  const apiKey = getVoyageKey();
+  if (!apiKey) return null;
   try {
     const res = await fetch("https://api.voyageai.com/v1/embeddings", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${VOYAGE_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

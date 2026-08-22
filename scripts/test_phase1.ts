@@ -1,3 +1,23 @@
+import fs from "fs";
+import path from "path";
+
+// Automatically load .env.local for local script execution
+const envPath = path.resolve(process.cwd(), ".env.local");
+if (fs.existsSync(envPath)) {
+  const lines = fs.readFileSync(envPath, "utf-8").split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
+      const idx = trimmed.indexOf("=");
+      const key = trimmed.substring(0, idx).trim();
+      const val = trimmed.substring(idx + 1).trim().replace(/^["']|["']$/g, "");
+      if (!process.env[key]) {
+        process.env[key] = val;
+      }
+    }
+  }
+}
+
 import { searchDocumentChunks } from "../src/lib/agent/embeddings";
 import { runAgentConversation } from "../src/lib/agent/orchestrator";
 
