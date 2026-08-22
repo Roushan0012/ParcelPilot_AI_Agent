@@ -1,4 +1,4 @@
-import { Account, Order, Ticket, Action, PendingAction, UserRole } from "@/lib/types";
+import { Account, Order, Ticket, PendingAction, UserRole } from "@/lib/types";
 import dataset from "./dataset.json";
 
 // In-memory action store initialized from database state
