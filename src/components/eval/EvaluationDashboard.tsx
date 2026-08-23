@@ -27,8 +27,8 @@ export function EvaluationDashboard({ role }: EvaluationDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
 
-  const fetchMetrics = async () => {
-    setLoading(true);
+  const fetchMetrics = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     setAccessDenied(false);
     try {
       const res = await fetch(`/api/eval?role=${role}`);
@@ -42,12 +42,17 @@ export function EvaluationDashboard({ role }: EvaluationDashboardProps) {
     } catch (err) {
       console.error("Failed to load evaluation metrics:", err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchMetrics();
+    fetchMetrics(true);
+    // Auto-refresh telemetry every 3 seconds for real-time live monitoring
+    const interval = setInterval(() => {
+      fetchMetrics(false);
+    }, 3000);
+    return () => clearInterval(interval);
   }, [role]);
 
   if (accessDenied || role === "customer_mock") {
@@ -68,7 +73,7 @@ export function EvaluationDashboard({ role }: EvaluationDashboardProps) {
   }
 
   const logs = metrics?.logs || [];
-  const maxLatency = Math.max(...logs.map((l) => l.latency_ms), 1000);
+  const maxLatency = Math.max(...logs.map((l) => l.latency_ms || 0), 3500);
 
   return (
     <div className="flex-1 flex flex-col h-screen bg-slate-950 overflow-y-auto">
@@ -80,17 +85,18 @@ export function EvaluationDashboard({ role }: EvaluationDashboardProps) {
               <Activity className="w-5 h-5 text-teal-400" />
               Evaluation & Observability Dashboard
             </h1>
-            <span className="px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-300 border border-teal-500/20 text-[10px] font-mono font-bold">
-              LIVE METRICS
+            <span className="px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-300 border border-teal-500/20 text-[10px] font-mono font-bold flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-ping" />
+              LIVE TELEMETRY
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Real-time latency, token usage, tool call counts, and estimated cost tracking for agent inquiries
+            Real-time latency, token usage, tool call counts, and estimated cost tracking for every agent query
           </p>
         </div>
 
         <button
-          onClick={fetchMetrics}
+          onClick={() => fetchMetrics(true)}
           disabled={loading}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
         >
@@ -168,35 +174,35 @@ export function EvaluationDashboard({ role }: EvaluationDashboardProps) {
 
         {/* Visual Chart: Latency per Interaction */}
         {logs.length > 0 && (
-          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-lg space-y-3">
+          <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-lg space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-wider flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-teal-400" />
                 Interaction Latency History (ms)
               </h3>
-              <span className="text-[11px] text-slate-500 font-mono">Recent {Math.min(15, logs.length)} turns</span>
+              <span className="text-[11px] text-slate-400 font-mono">Recent {Math.min(10, logs.length)} turns (Real-time)</span>
             </div>
 
-            <div className="h-28 flex items-end gap-2 pt-4 px-2 border-b border-slate-800">
-              {logs.slice(0, 15).reverse().map((log, idx) => {
-                const heightPct = Math.max(12, Math.round((log.latency_ms / maxLatency) * 100));
+            <div className="h-44 flex items-end gap-3 pt-6 pb-2 px-3 bg-slate-950/60 rounded-xl border border-slate-800/80">
+              {logs.slice(0, 10).reverse().map((log, idx) => {
+                const barHeightPx = Math.max(28, Math.min(115, Math.round((log.latency_ms / maxLatency) * 115)));
                 return (
-                  <div key={log.id || idx} className="flex-1 flex flex-col items-center gap-1 group relative">
-                    <div className="text-[9px] font-mono text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity absolute -top-5">
+                  <div key={log.id || idx} className="flex-1 flex flex-col items-center justify-end h-full gap-1.5 group">
+                    <span className="text-[10px] font-mono text-teal-300 font-bold group-hover:scale-110 transition-transform">
                       {log.latency_ms}ms
-                    </div>
+                    </span>
                     <div
-                      style={{ height: `${heightPct}%` }}
-                      className={`w-full rounded-t-md transition-all ${
+                      style={{ height: `${barHeightPx}px` }}
+                      className={`w-full rounded-t-lg transition-all shadow-md ${
                         log.status === "error"
-                          ? "bg-rose-500/80"
+                          ? "bg-rose-500 hover:bg-rose-400 shadow-rose-500/20"
                           : log.latency_ms > 3000
-                          ? "bg-amber-500/80"
-                          : "bg-teal-500/80 hover:bg-teal-400"
+                          ? "bg-gradient-to-t from-amber-600 to-amber-400 shadow-amber-500/20"
+                          : "bg-gradient-to-t from-teal-600 to-teal-400 hover:from-teal-500 hover:to-teal-300 shadow-teal-500/30"
                       }`}
                     />
-                    <span className="text-[9px] font-mono text-slate-500 truncate w-full text-center">
-                      #{logs.length - idx}
+                    <span className="text-[10px] font-mono text-slate-400 truncate w-full text-center font-medium">
+                      Turn #{idx + 1}
                     </span>
                   </div>
                 );
@@ -247,7 +253,7 @@ export function EvaluationDashboard({ role }: EvaluationDashboardProps) {
                       </td>
 
                       {/* Latency */}
-                      <td className="px-3.5 py-2.5 font-mono text-teal-300 whitespace-nowrap">
+                      <td className="px-3.5 py-2.5 font-mono text-teal-300 whitespace-nowrap font-bold">
                         {l.latency_ms} ms
                       </td>
 

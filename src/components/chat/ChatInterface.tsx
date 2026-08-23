@@ -265,8 +265,12 @@ export function ChatInterface({ role, accountScope, initialPrompt, onClearInitia
         const transcribedText = data.text.trim();
         setInput((prev) => (prev ? `${prev} ${transcribedText}` : transcribedText));
         setVoiceError(null);
+        // Automatically focus the input for instant Enter or editing
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 50);
       } else if (res.ok && (!data.text || data.text.trim().length === 0)) {
-        setVoiceError("Didn't catch that — try again.");
+        setVoiceError("Didn't catch that — try speaking a bit louder.");
       } else {
         console.error("Transcription failure:", data.error);
         setVoiceError("Voice input is unavailable right now — you can type instead.");
