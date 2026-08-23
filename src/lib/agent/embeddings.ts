@@ -1,4 +1,5 @@
 import { DocumentChunk } from "@/lib/types";
+import { getServiceClient } from "@/lib/supabase/client";
 import dataset from "../data/dataset.json";
 
 function getVoyageKey() {
@@ -55,14 +56,44 @@ export interface SearchOptions {
 
 export async function searchDocumentChunks(query: string, options: SearchOptions = {}): Promise<DocumentChunk[]> {
   const { customerScope, topK = 6, threshold = 0.25 } = options;
-  const chunks = dataset.document_chunks as DocumentChunk[];
-
   const queryEmbedding = await getQueryEmbedding(query);
 
+  // 1. Attempt live Supabase pgvector search via match_documents RPC
+  if (queryEmbedding) {
+    try {
+      const client = getServiceClient();
+      const { data, error } = await client.rpc("match_documents", {
+        query_embedding: queryEmbedding,
+        match_threshold: threshold,
+        match_count: topK,
+        filter_scope: customerScope || null,
+      });
+
+      if (!error && data && data.length > 0) {
+        return data.map((d: any) => ({
+          id: d.id,
+          source_name: d.source_name,
+          doc_title: d.source_name.replace(".pdf", "").replace(/_/g, " "),
+          version: d.version,
+          effective_date: d.effective_date,
+          section_title: d.section_title,
+          content: d.content,
+          customer_scope: d.customer_scope,
+          authority_level: d.authority_level,
+          is_authoritative: d.authority_level <= 3,
+          similarity: d.similarity,
+        }));
+      }
+    } catch (rpcErr) {
+      console.warn("Supabase live match_documents RPC fallback to dataset:", rpcErr);
+    }
+  }
+
+  // 2. Fallback to local cosine similarity search over dataset.json
+  const chunks = dataset.document_chunks as DocumentChunk[];
   let scored: { chunk: DocumentChunk; score: number }[] = [];
 
   if (queryEmbedding) {
-    // Vector Cosine Similarity Search
     for (const chunk of chunks) {
       if (chunk.embedding && chunk.embedding.length > 0) {
         let sim = cosineSimilarity(queryEmbedding, chunk.embedding);
@@ -72,39 +103,35 @@ export async function searchDocumentChunks(query: string, options: SearchOptions
           sim += 0.15;
         }
 
-        // Apply authority level penalty to deprecated policies so they rank lower
-        if (chunk.authority_level >= 90) {
-          sim -= 0.1;
-        }
-
-        if (sim >= threshold) {
-          scored.push({ chunk: { ...chunk, similarity: sim }, score: sim });
+        // Scope filter
+        if (
+          !customerScope ||
+          chunk.customer_scope === "general" ||
+          chunk.customer_scope.toLowerCase() === customerScope.toLowerCase() ||
+          (customerScope.includes("001") && chunk.customer_scope === "Northstar") ||
+          (customerScope.includes("002") && chunk.customer_scope === "LumenWorks")
+        ) {
+          if (sim >= threshold) {
+            scored.push({ chunk, score: sim });
+          }
         }
       }
     }
   } else {
-    // Lexical / Keyword fallback
-    const terms = query.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
+    // Keyword fallback if embedding API is unavailable
+    const qLower = query.toLowerCase();
     for (const chunk of chunks) {
-      const text = `${chunk.doc_title} ${chunk.section_title} ${chunk.content}`.toLowerCase();
-      let matchCount = 0;
-      for (const term of terms) {
-        if (text.includes(term)) matchCount++;
-      }
-      let score = terms.length > 0 ? matchCount / terms.length : 0;
-      if (customerScope && chunk.customer_scope.toLowerCase() === customerScope.toLowerCase()) {
-        score += 0.2;
-      }
-      if (chunk.authority_level >= 90) {
-        score -= 0.15;
-      }
-      if (score > 0.1) {
-        scored.push({ chunk: { ...chunk, similarity: score }, score });
+      const match =
+        chunk.content.toLowerCase().includes(qLower) ||
+        chunk.section_title.toLowerCase().includes(qLower) ||
+        chunk.source_name.toLowerCase().includes(qLower);
+      if (match) {
+        scored.push({ chunk, score: 0.5 });
       }
     }
   }
 
-  // Sort strictly by authority level first (1: Customer Agreement > 2: Policy/SOP > 3: Ops Guide), then score
+  // Sort by authority level first (Tier 1 Signed Agreements first), then similarity score
   scored.sort((a, b) => {
     if (a.chunk.authority_level !== b.chunk.authority_level) {
       return a.chunk.authority_level - b.chunk.authority_level;
@@ -112,5 +139,8 @@ export async function searchDocumentChunks(query: string, options: SearchOptions
     return b.score - a.score;
   });
 
-  return scored.slice(0, topK).map((s) => s.chunk);
+  return scored.slice(0, topK).map((s) => ({
+    ...s.chunk,
+    similarity: s.score,
+  }));
 }

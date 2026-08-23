@@ -1,4 +1,5 @@
 import { Account, Order, Ticket, PendingAction, UserRole } from "@/lib/types";
+import { getServiceClient, supabase } from "@/lib/supabase/client";
 import dataset from "./dataset.json";
 
 // In-memory action store initialized from database state
@@ -14,32 +15,91 @@ export const SNAPSHOT_TIME = dataset.snapshot_time || "2026-08-16 11:00 Asia/Kol
 export const SNAPSHOT_DATE = new Date("2026-08-16T11:00:00+05:30");
 
 /**
- * Access-Control and RLS Enforcement Layer
+ * Access-Control and RLS Enforcement Layer querying live Supabase PostgreSQL tables
  * - ops_manager: Full global access across all accounts, orders, tickets
  * - support_agent: Access to all accounts/orders/tickets for investigation and action proposals
  * - customer_mock: Strictly isolated to their own account_id
  */
 export async function getAccounts(auth: AuthContext): Promise<Account[]> {
+  const activeAccountId = auth.accountId || auth.accountScope;
+
+  try {
+    const client = getServiceClient();
+    let query = client.from("accounts").select("*");
+
+    if (auth.role === "customer_mock") {
+      if (!activeAccountId) return [];
+      query = query.eq("account_id", activeAccountId);
+    } else if (activeAccountId) {
+      query = query.eq("account_id", activeAccountId);
+    }
+
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      return data as Account[];
+    }
+  } catch (err) {
+    console.warn("Supabase live accounts query fallback to dataset:", err);
+  }
+
+  // Fallback to dataset.json
   const allAccounts = dataset.accounts as Account[];
   if (auth.role === "customer_mock") {
-    if (!auth.accountId) return [];
-    return allAccounts.filter((a) => a.account_id === auth.accountId);
+    if (!activeAccountId) return [];
+    return allAccounts.filter((a) => a.account_id === activeAccountId);
   }
-  if (auth.accountId) {
-    return allAccounts.filter((a) => a.account_id === auth.accountId);
+  if (activeAccountId) {
+    return allAccounts.filter((a) => a.account_id === activeAccountId);
   }
   return allAccounts;
 }
 
-export async function getOrders(auth: AuthContext, filters?: { order_id?: string; account_id?: string; carrier?: string; status?: string }): Promise<Order[]> {
+export async function getOrders(
+  auth: AuthContext,
+  filters?: { order_id?: string; account_id?: string; carrier?: string; status?: string }
+): Promise<Order[]> {
+  const activeAccountId = auth.accountId || auth.accountScope;
+
+  try {
+    const client = getServiceClient();
+    let query = client.from("orders").select("*");
+
+    // Enforce RLS access boundary
+    if (auth.role === "customer_mock") {
+      if (!activeAccountId) return [];
+      query = query.eq("account_id", activeAccountId);
+    } else if (activeAccountId) {
+      query = query.eq("account_id", activeAccountId);
+    }
+
+    if (filters?.order_id) {
+      query = query.ilike("order_id", `%${filters.order_id.trim()}%`);
+    }
+    if (filters?.account_id) {
+      query = query.eq("account_id", filters.account_id.trim());
+    }
+    if (filters?.carrier) {
+      query = query.ilike("carrier", `%${filters.carrier.trim()}%`);
+    }
+    if (filters?.status) {
+      query = query.eq("status", filters.status.trim());
+    }
+
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      return data as Order[];
+    }
+  } catch (err) {
+    console.warn("Supabase live orders query fallback to dataset:", err);
+  }
+
+  // Fallback to dataset.json
   let allOrders = dataset.orders as Order[];
-  
-  // Enforce RLS access boundary
   if (auth.role === "customer_mock") {
-    if (!auth.accountId) return [];
-    allOrders = allOrders.filter((o) => o.account_id === auth.accountId);
-  } else if (auth.accountId) {
-    allOrders = allOrders.filter((o) => o.account_id === auth.accountId);
+    if (!activeAccountId) return [];
+    allOrders = allOrders.filter((o) => o.account_id === activeAccountId);
+  } else if (activeAccountId) {
+    allOrders = allOrders.filter((o) => o.account_id === activeAccountId);
   }
 
   if (filters?.order_id) {
@@ -62,15 +122,49 @@ export async function getOrders(auth: AuthContext, filters?: { order_id?: string
   return allOrders;
 }
 
-export async function getTickets(auth: AuthContext, filters?: { ticket_id?: string; account_id?: string; status?: string; search?: string }): Promise<Ticket[]> {
-  let allTickets = dataset.tickets as Ticket[];
+export async function getTickets(
+  auth: AuthContext,
+  filters?: { ticket_id?: string; account_id?: string; status?: string; search?: string }
+): Promise<Ticket[]> {
+  const activeAccountId = auth.accountId || auth.accountScope;
 
-  // Enforce RLS access boundary
+  try {
+    const client = getServiceClient();
+    let query = client.from("tickets").select("*");
+
+    // Enforce RLS access boundary
+    if (auth.role === "customer_mock") {
+      if (!activeAccountId) return [];
+      query = query.eq("account_id", activeAccountId);
+    } else if (activeAccountId) {
+      query = query.eq("account_id", activeAccountId);
+    }
+
+    if (filters?.ticket_id) {
+      query = query.ilike("ticket_id", `%${filters.ticket_id.trim()}%`);
+    }
+    if (filters?.account_id) {
+      query = query.eq("account_id", filters.account_id.trim());
+    }
+    if (filters?.status) {
+      query = query.eq("status", filters.status.trim());
+    }
+
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      return data as Ticket[];
+    }
+  } catch (err) {
+    console.warn("Supabase live tickets query fallback to dataset:", err);
+  }
+
+  // Fallback to dataset.json
+  let allTickets = dataset.tickets as Ticket[];
   if (auth.role === "customer_mock") {
-    if (!auth.accountId) return [];
-    allTickets = allTickets.filter((t) => t.account_id === auth.accountId);
-  } else if (auth.accountId) {
-    allTickets = allTickets.filter((t) => t.account_id === auth.accountId);
+    if (!activeAccountId) return [];
+    allTickets = allTickets.filter((t) => t.account_id === activeAccountId);
+  } else if (activeAccountId) {
+    allTickets = allTickets.filter((t) => t.account_id === activeAccountId);
   }
 
   if (filters?.ticket_id) {
@@ -87,63 +181,99 @@ export async function getTickets(auth: AuthContext, filters?: { ticket_id?: stri
   }
   if (filters?.search) {
     const q = filters.search.trim().toLowerCase();
-    allTickets = allTickets.filter((t) => 
-      t.subject.toLowerCase().includes(q) || 
-      t.description.toLowerCase().includes(q)
+    allTickets = allTickets.filter(
+      (t) => t.subject.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
     );
   }
 
   return allTickets;
 }
 
-export async function createPendingAction(action: Omit<PendingAction, "action_id" | "created_at" | "status">): Promise<PendingAction> {
-  const newAction: PendingAction = {
-    ...action,
+export async function createPendingAction(
+  action_type_or_obj: any,
+  payload_arg?: any
+): Promise<PendingAction> {
+  const action_type = typeof action_type_or_obj === "object" ? action_type_or_obj.action_type : action_type_or_obj;
+  const payload = typeof action_type_or_obj === "object" ? action_type_or_obj.payload : payload_arg;
+
+  const action: PendingAction = {
     action_id: `ACT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    action_type,
     status: "PENDING_CONFIRMATION",
+    payload,
     created_at: new Date().toISOString(),
   };
-  actionsStore.unshift(newAction);
-  return newAction;
+
+  actionsStore.unshift(action);
+
+  // Also persist to Supabase actions table
+  try {
+    const client = getServiceClient();
+    await client.from("actions").insert({
+      action_type,
+      payload,
+      status: "PENDING_CONFIRMATION",
+      account_id: payload.account_id || null,
+      ticket_id: payload.ticket_id || null,
+      order_id: payload.order_id || null,
+    });
+  } catch (err) {
+    console.warn("Could not insert action into Supabase actions table:", err);
+  }
+
+  return action;
 }
 
-export async function confirmAction(actionId: string): Promise<{ success: boolean; action?: PendingAction; message: string }> {
-  const idx = actionsStore.findIndex((a) => a.action_id === actionId);
-  if (idx === -1) {
-    // If not in store, create executed placeholder
-    const confirmed: PendingAction = {
-      action_id: actionId,
-      action_type: "escalation",
-      status: "EXECUTED",
-      payload: {
-        title: "Action Confirmed",
-        description: "Action executed via confirmation gate.",
-        reason: "User confirmed action in UI.",
-        governing_source: "ParcelPilot Operations Engine",
-      },
-      created_at: new Date().toISOString(),
-      confirmed_at: new Date().toISOString(),
-    };
-    actionsStore.unshift(confirmed);
-    return { success: true, action: confirmed, message: `Action ${actionId} confirmed and executed successfully into the database.` };
+export async function confirmAction(actionId: string, confirmed: boolean = true): Promise<{ success: boolean; message: string; action?: PendingAction }> {
+  const action = actionsStore.find((a) => a.action_id === actionId);
+  if (!action) {
+    return { success: false, message: `Action ${actionId} not found in pending state.` };
   }
-  actionsStore[idx].status = "EXECUTED";
-  actionsStore[idx].confirmed_at = new Date().toISOString();
+
+  action.status = confirmed ? "EXECUTED" : "CANCELLED";
+  action.confirmed_at = new Date().toISOString();
+
+  // Also update Supabase actions table
+  try {
+    const client = getServiceClient();
+    await client
+      .from("actions")
+      .update({ status: action.status, confirmed_at: action.confirmed_at })
+      .match({ action_id: actionId });
+  } catch (err) {
+    console.warn("Could not update action in Supabase:", err);
+  }
+
   return {
     success: true,
-    action: actionsStore[idx],
-    message: `Action ${actionId} (${actionsStore[idx].action_type}) confirmed and recorded in audit log.`,
+    message: confirmed
+      ? `✅ Action ${actionId} (${action.action_type}) confirmed and executed successfully.`
+      : `❌ Action ${actionId} was rejected and dismissed.`,
+    action,
   };
 }
 
-export async function cancelAction(actionId: string): Promise<{ success: boolean; action?: PendingAction; message: string }> {
-  const idx = actionsStore.findIndex((a) => a.action_id === actionId);
-  if (idx !== -1) {
-    actionsStore[idx].status = "CANCELLED";
-  }
-  return { success: true, message: `Action ${actionId} was cancelled by user.` };
+export async function cancelAction(actionId: string): Promise<{ success: boolean; message: string; action?: PendingAction }> {
+  return confirmAction(actionId, false);
 }
 
 export async function getActions(): Promise<PendingAction[]> {
+  try {
+    const client = getServiceClient();
+    const { data, error } = await client.from("actions").select("*").order("created_at", { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map((d: any) => ({
+        action_id: d.action_id || `ACT-${d.id}`,
+        action_type: d.action_type,
+        status: d.status,
+        payload: d.payload,
+        created_at: d.created_at,
+        confirmed_at: d.confirmed_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("Fallback to local actionsStore:", err);
+  }
+
   return actionsStore;
 }
