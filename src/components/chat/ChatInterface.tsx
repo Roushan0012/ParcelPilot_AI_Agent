@@ -20,7 +20,11 @@ import {
   ChevronRight,
   Database,
   Search,
-  CheckCircle2
+  CheckCircle2,
+  Mic,
+  Square,
+  AlertCircle,
+  X
 } from "lucide-react";
 
 interface ChatInterfaceProps {
@@ -30,12 +34,14 @@ interface ChatInterfaceProps {
   onClearInitialPrompt?: () => void;
 }
 
+type VoiceState = "idle" | "recording" | "transcribing";
+
 export function ChatInterface({ role, accountScope, initialPrompt, onClearInitialPrompt }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome-msg",
       role: "assistant",
-      content: `👋 **Welcome to ParcelPilot Operations Copilot**\n\nI can assist you with:\n- **Contractual terms & policy verification** (Northstar fee waivers, LumenWorks custom credits)\n- **Order tracking & delay calculations** relative to snapshot anchor (**2026-08-16 11:00 IST**)\n- **SLA compliance monitoring & critical incident escalation**\n- **Confirmation-gated operational actions** (service credits, ticket updates)\n\nType your query or choose a prompt from the sidebar to begin.`,
+      content: `👋 **Welcome to ParcelPilot Operations Copilot**\n\nI can assist you with:\n- **Contractual terms & policy verification** (Northstar fee waivers, LumenWorks custom credits)\n- **Order tracking & delay calculations** relative to snapshot anchor (**2026-08-16 11:00 IST**)\n- **SLA compliance monitoring & critical incident escalation**\n- **Confirmation-gated operational actions** (service credits, ticket updates)\n\nType your query, click a prompt from the sidebar, or use the **microphone button** to speak your inquiry.`,
       created_at: new Date().toISOString(),
     },
   ]);
@@ -43,7 +49,17 @@ export function ChatInterface({ role, accountScope, initialPrompt, onClearInitia
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
+  
+  // Voice Input (Whisper STT) States
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -55,6 +71,16 @@ export function ChatInterface({ role, accountScope, initialPrompt, onClearInitia
       onClearInitialPrompt?.();
     }
   }, [initialPrompt]);
+
+  // Clean up recording timer and stream on unmount
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
 
   const handleSend = async (textToSend?: string) => {
     const query = (textToSend || input).trim();
@@ -131,6 +157,140 @@ export function ChatInterface({ role, accountScope, initialPrompt, onClearInitia
         created_at: new Date().toISOString(),
       },
     ]);
+  };
+
+  // Start Audio Recording via MediaRecorder
+  const startRecording = async () => {
+    setVoiceError(null);
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setVoiceError("Voice input is not supported in this browser.");
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      // Select supported mimeType
+      let options: MediaRecorderOptions = {};
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+        options = { mimeType: "audio/webm;codecs=opus" };
+      } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+        options = { mimeType: "audio/webm" };
+      } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+        options = { mimeType: "audio/mp4" };
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+        }
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+        }
+
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: mediaRecorder.mimeType || "audio/webm",
+        });
+
+        if (audioBlob.size < 100) {
+          setVoiceState("idle");
+          setVoiceError("Didn't catch that — try again.");
+          return;
+        }
+
+        await processTranscription(audioBlob);
+      };
+
+      mediaRecorder.start(250);
+      setVoiceState("recording");
+      setRecordSeconds(0);
+
+      timerIntervalRef.current = setInterval(() => {
+        setRecordSeconds((prev) => {
+          if (prev >= 60) {
+            // Auto-stop after 60 seconds of recording
+            stopRecording();
+            return 60;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      console.error("Microphone access error:", err);
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setVoiceError("Microphone access is blocked — enable it in your browser settings to use voice input.");
+      } else {
+        setVoiceError("Voice input is unavailable right now — you can type instead.");
+      }
+      setVoiceState("idle");
+    }
+  };
+
+  // Stop Audio Recording
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      setVoiceState("transcribing");
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  // Send audio to /api/transcribe
+  const processTranscription = async (blob: Blob) => {
+    setVoiceState("transcribing");
+    try {
+      const formData = new FormData();
+      formData.append("file", blob, "recording.webm");
+
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.text && data.text.trim().length > 0) {
+        const transcribedText = data.text.trim();
+        setInput((prev) => (prev ? `${prev} ${transcribedText}` : transcribedText));
+        setVoiceError(null);
+      } else if (res.ok && (!data.text || data.text.trim().length === 0)) {
+        setVoiceError("Didn't catch that — try again.");
+      } else {
+        console.error("Transcription failure:", data.error);
+        setVoiceError("Voice input is unavailable right now — you can type instead.");
+      }
+    } catch (err: any) {
+      console.error("Transcription network error:", err);
+      setVoiceError("Voice input is unavailable right now — you can type instead.");
+    } finally {
+      setVoiceState("idle");
+    }
+  };
+
+  const toggleVoiceRecording = () => {
+    if (voiceState === "recording") {
+      stopRecording();
+    } else if (voiceState === "idle") {
+      startRecording();
+    }
+  };
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
   return (
@@ -302,7 +462,23 @@ export function ChatInterface({ role, accountScope, initialPrompt, onClearInitia
       </div>
 
       {/* Input Form Footer */}
-      <div className="p-4 border-t border-slate-800/80 bg-slate-900/60 backdrop-blur-md">
+      <div className="p-4 border-t border-slate-800/80 bg-slate-900/60 backdrop-blur-md relative">
+        {/* Inline Voice Error Message Banner */}
+        {voiceError && (
+          <div className="max-w-4xl mx-auto mb-2.5 px-3.5 py-2 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-bottom-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              <span>{voiceError}</span>
+            </div>
+            <button
+              onClick={() => setVoiceError(null)}
+              className="p-1 rounded text-rose-400 hover:text-rose-200 hover:bg-rose-900/40 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -310,17 +486,71 @@ export function ChatInterface({ role, accountScope, initialPrompt, onClearInitia
           }}
           className="max-w-4xl mx-auto flex items-center gap-2"
         >
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={loading}
-            placeholder="Ask about policies, order cancellation fees, SLA response targets, service credits, or escalations..."
-            className="flex-1 bg-slate-900/90 border border-slate-700/80 rounded-xl px-4 py-3 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-all font-sans"
-          />
+          {/* Main Input Text Field */}
+          <div className="relative flex-1 flex items-center">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={loading || voiceState === "recording"}
+              placeholder={
+                voiceState === "recording"
+                  ? "🎙️ Listening... Speak your operational inquiry now."
+                  : voiceState === "transcribing"
+                  ? "⚡ Transcribing audio via Whisper STT..."
+                  : "Ask about policies, order cancellation fees, SLA response targets, service credits, or escalations..."
+              }
+              className={`w-full bg-slate-900/90 border rounded-xl px-4 py-3 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none transition-all font-sans ${
+                voiceState === "recording"
+                  ? "border-teal-500/80 ring-2 ring-teal-500/20 bg-slate-900 text-teal-200 placeholder:text-teal-400/70"
+                  : voiceState === "transcribing"
+                  ? "border-sky-500/50 bg-slate-900/70 text-slate-300"
+                  : "border-slate-700/80 focus:border-teal-500"
+              }`}
+            />
+
+            {/* Live Recording Badge with Pulsing Timer */}
+            {voiceState === "recording" && (
+              <div className="absolute right-3 flex items-center gap-2 px-2.5 py-1 rounded-full bg-teal-950/90 border border-teal-500/50 text-[11px] font-mono text-teal-300 shadow-sm animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-teal-400 animate-ping" />
+                <span>REC {formatTimer(recordSeconds)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Microphone Voice Input Button */}
+          <button
+            type="button"
+            onClick={toggleVoiceRecording}
+            disabled={loading || voiceState === "transcribing"}
+            title={
+              voiceState === "recording"
+                ? "Click to stop recording and transcribe"
+                : voiceState === "transcribing"
+                ? "Transcribing voice input..."
+                : "Record voice input (Whisper STT)"
+            }
+            className={`p-3 rounded-xl border transition-all flex items-center justify-center flex-shrink-0 ${
+              voiceState === "recording"
+                ? "bg-teal-500 text-slate-950 border-teal-400 font-bold shadow-lg shadow-teal-500/30 scale-105"
+                : voiceState === "transcribing"
+                ? "bg-slate-800 text-teal-400 border-teal-500/30 opacity-80 cursor-wait"
+                : "bg-slate-900/90 hover:bg-slate-800 border-slate-700/80 text-slate-400 hover:text-teal-300 hover:border-slate-600"
+            }`}
+          >
+            {voiceState === "recording" ? (
+              <Square className="w-5 h-5 fill-current" />
+            ) : voiceState === "transcribing" ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Mic className="w-5 h-5" />
+            )}
+          </button>
+
+          {/* Send / Submit Button */}
           <button
             type="submit"
-            disabled={!input.trim() || loading}
+            disabled={!input.trim() || loading || voiceState === "recording"}
             className="p-3 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold transition-all disabled:opacity-40 disabled:hover:bg-teal-500 shadow-lg shadow-teal-500/20 flex-shrink-0"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}

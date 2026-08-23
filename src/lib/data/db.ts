@@ -7,6 +7,7 @@ let actionsStore: PendingAction[] = [];
 export interface AuthContext {
   role: UserRole;
   accountId?: string; // If scoped to specific account (e.g. ACCT-001)
+  accountScope?: string;
 }
 
 export const SNAPSHOT_TIME = dataset.snapshot_time || "2026-08-16 11:00 Asia/Kolkata";

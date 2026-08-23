@@ -54,11 +54,11 @@ async function main() {
   console.log("🤖 Agent Response:\n");
   console.log(response.message);
   console.log("\n🔍 Tool Calls Executed:", response.toolCalls.length);
-  response.toolCalls.forEach((tc) => {
+  response.toolCalls.forEach((tc: any) => {
     console.log(`  - [${tc.status.toUpperCase()}] ${tc.tool_name}(${JSON.stringify(tc.args)})`);
   });
   console.log("\n📚 Citations Generated:", response.citations.length);
-  response.citations.forEach((cit) => {
+  response.citations.forEach((cit: any) => {
     console.log(`  - [Tier ${cit.authority_level}] ${cit.doc_title} (${cit.section_title})`);
   });
 

@@ -128,3 +128,11 @@ export interface ProactiveAlert {
   proposed_action?: PendingAction;
   source_citation: string;
 }
+
+export interface AgentRunResult {
+  message: string;
+  toolCalls: ToolCallEvent[];
+  pendingAction: PendingAction | null;
+  citations: Citation[];
+}
+

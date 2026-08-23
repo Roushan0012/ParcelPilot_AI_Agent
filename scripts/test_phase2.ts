@@ -37,7 +37,7 @@ async function runScenario(title: string, question: string, authRole: "ops_manag
   console.log(response.message);
   console.log("\n--------------------------------------------------------------------------------");
   console.log("🔍 Tool Calls Executed:", response.toolCalls.length);
-  response.toolCalls.forEach((tc, idx) => {
+  response.toolCalls.forEach((tc: any, idx: number) => {
     console.log(`  [${idx + 1}] ${tc.tool_name} (${tc.status.toUpperCase()})`);
     console.log(`      Args: ${JSON.stringify(tc.args)}`);
   });
@@ -59,7 +59,7 @@ async function runScenario(title: string, question: string, authRole: "ops_manag
   }
 
   console.log("\n📚 Citations Generated:", response.citations.length);
-  response.citations.forEach((cit) => {
+  response.citations.forEach((cit: any) => {
     console.log(`  - [Tier ${cit.authority_level}] ${cit.doc_title} (${cit.section_title})`);
   });
   console.log("\n");
