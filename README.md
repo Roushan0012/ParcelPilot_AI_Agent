@@ -1,47 +1,82 @@
 # ParcelPilot AI Operations & Support Agent
 
-A full-stack, autonomous internal operations copilot built for **ParcelPilot**, an enterprise B2B logistics platform. The system answers operational inquiries across heterogeneous policies, reasons over signed enterprise agreements with conflicting authority tiers, performs temporal calculations against a fixed snapshot time, detects proactive SLA breaches and unclaimed carrier fault credits, and executes human-confirmed state mutations via a deterministic confirmation gate.
+A full-stack, autonomous internal operations copilot built for **ParcelPilot**, an enterprise B2B logistics platform. The system answers operational inquiries across heterogeneous policies, reasons over signed enterprise agreements with conflicting authority tiers, performs temporal calculations against a fixed snapshot time, detects proactive SLA breaches and unclaimed carrier fault credits, executes human-confirmed state mutations via a deterministic confirmation gate, supports **Voice Input (Whisper STT)**, and provides a comprehensive **Evaluation & Observability Dashboard** (latency, token usage, cost tracking).
 
 ---
 
 ## 🌟 Key Highlights & System Architecture
 
 ```
-+-----------------------------------------------------------------------------------------------+
-|                                 ParcelPilot Next.js 14 Web App                                |
-|   - Modern Dark-Mode Operations Interface (Tailwind CSS, Glassmorphism, Monospace Activity)   |
-|   - Left Sidebar: RLS Role Switcher, System Snapshot Clock, Interactive Multi-Step Starters   |
-|   - Real-Time Chat: Tool Call Event Badges, Markdown Tables, Inline Source Citation Drawers   |
-|   - Proactive Issue Scanner Dashboard: Real-Time Anomaly Detection & Contract SLA Alerter     |
-|   - Knowledge Base & Agreements Explorer + Confirmed Actions Audit Trail                      |
-+-----------------------------------------------+-----------------------------------------------+
-                                                |
-                                                v
-+-----------------------------------------------------------------------------------------------+
-|                               Next.js API & Orchestration Layer                               |
-|   - /api/chat: Multi-step Reasoning Loop with Auto Model Fallback (llama-3.3, gpt-oss, qwen)  |
-|   - /api/actions/confirm: Two-Phase Human-in-the-Loop Confirmation Gate                       |
-|   - /api/proactive: Live Anomaly & Outage Compliance Scanner                                  |
-|   - /api/knowledge: Document Chunks & Normalized PostgreSQL Table Inspector                   |
-+----------------------+------------------------+-----------------------+-----------------------+
-                       |                        |                       |
-                       v                        v                       v
-+--------------------------+ +--------------------------+ +-------------------------------------+
-|     search_documents     | |   query_account_data     | |            create_action            |
-| 1024-dim Voyage-3 vector | | PostgreSQL scoped by RLS | | Prepares PendingAction preview card |
-| search with Tier sorting | | & snapshot anchor        | | for operator UI approval            |
-+--------------------------+ +--------------------------+ +-------------------------------------+
-                       |                        |                       |
-                       +------------------------+-----------------------+
-                                                |
-                                                v
-+-----------------------------------------------------------------------------------------------+
-|                                  Supabase PostgreSQL Instance                                 |
-|   - pgvector extension: 1024-dim cosine distance indexing (HNSW)                              |
-|   - Normalized tables: accounts, orders, tickets, actions, document_chunks                    |
-|   - Row-Level Security (RLS) policies: ops_manager, support_agent, customer_mock              |
-+-----------------------------------------------------------------------------------------------+
++---------------------------------------------------------------------------------------------------+
+|                                  ParcelPilot Next.js 14 Web App                                   |
+|   - Modern Dark-Mode Operations Interface (Tailwind CSS, Glassmorphism, Monospace Activity)       |
+|   - Left Sidebar: RLS Role Switcher, System Snapshot Clock, Interactive Multi-Step Starters       |
+|   - Real-Time Chat: Tool Call Event Badges, Markdown Tables, Inline Source Citation Drawers       |
+|   - Voice Input (Whisper STT): Native Mic Button, Live Pulsing Timer, Non-blocking Transcription  |
+|   - Proactive Issue Scanner Dashboard: Real-Time Anomaly Detection & Contract SLA Alerter         |
+|   - Evaluation & Metrics Dashboard: Live Latency (ms), Token Usage (In/Out), Cost ($), Charts     |
+|   - Knowledge Base & Agreements Explorer + Confirmed Actions Audit Trail                          |
++-------------------------------------------------+-------------------------------------------------+
+                                                  |
+                                                  v
++---------------------------------------------------------------------------------------------------+
+|                                Next.js API & Orchestration Layer                                  |
+|   - /api/chat: Multi-step Reasoning Loop with Auto Model Fallback (gpt-oss, llama, qwen)         |
+|   - /api/transcribe: Speech-to-Text Transcription via Groq Whisper (whisper-large-v3-turbo)        |
+|   - /api/eval: Observability Telemetry & Aggregated Performance Metrics (RLS-protected)           |
+|   - /api/actions/confirm: Two-Phase Human-in-the-Loop Confirmation Gate                           |
+|   - /api/proactive: Live Anomaly & Outage Compliance Scanner                                      |
+|   - /api/knowledge: Document Chunks & Normalized PostgreSQL Table Inspector                       |
++----------------------+--------------------------+-----------------------+-------------------------+
+                       |                          |                       |
+                       v                          v                       v
++--------------------------+   +--------------------------+   +-------------------------------------+
+|     search_documents     |   |   query_account_data     |   |            create_action            |
+| 1024-dim Voyage-3 vector |   | PostgreSQL scoped by RLS |   | Prepares PendingAction preview card |
+| search with Tier sorting |   | & snapshot anchor        |   | for operator UI approval            |
++--------------------------+   +--------------------------+   +-------------------------------------+
+                       |                          |                       |
+                       +--------------------------+-----------------------+
+                                                  |
+                                                  v
++---------------------------------------------------------------------------------------------------+
+|                                   Supabase PostgreSQL Instance                                    |
+|   - pgvector extension: 1024-dim cosine distance indexing (HNSW)                                  |
+|   - Normalized tables: accounts, orders, tickets, actions, document_chunks, eval_logs             |
+|   - Row-Level Security (RLS) policies: ops_manager, support_agent, customer_mock                  |
++---------------------------------------------------------------------------------------------------+
 ```
+
+---
+
+## 🎙️ Voice Input (Whisper STT)
+
+The chat input interface includes native speech-to-text integration powered by OpenAI-compatible Whisper models:
+* **Native Microphone Button**: Positioned immediately to the left of the Send button.
+* **3 Dynamic Visual States**:
+  - **Idle**: Muted neutral mic icon matching the dark-mode theme.
+  - **Recording**: Pulses in teal (`animate-pulse`) with a live timer badge (`REC 00:04`) and a stop icon.
+  - **Processing**: Transitions to a spinner (`Loader2`) while transcribing.
+* **Audio Capture & Endpoint**: Captures audio via browser `MediaRecorder` API (`audio/webm`) and posts to `POST /api/transcribe` utilizing Groq's **`whisper-large-v3-turbo`**.
+* **Operator Review**: Fills transcribed text into the chat input for operator review/editing without auto-submitting.
+* **Inline Error Banner**: Dismissible banner displays actionable guidance for blocked mic permissions or network issues without crashing the chat.
+
+---
+
+## 📊 Evaluation & Observability Dashboard
+
+A dedicated observability interface accessible in the sidebar under **"Evaluation & Metrics" (⚡)**:
+* **Real-Time KPI Cards**:
+  - ⏱️ **Avg Latency (ms)**: Average response time across the last 20 turns.
+  - ⚡ **Total Tokens Used**: Cumulative input + output tokens (Session & All-time).
+  - 💰 **Estimated Total Cost ($ USD)**: Calculated based on token rates ($0.59/$0.79 per 1M tokens for Groq; $3.00/$15.00 for Claude).
+  - 📑 **Total Queries Run**: Count of executed reasoning cycles.
+  - 🛡️ **Error Rate (%)**: Ratio of failed inquiries.
+* **Interactive Latency History Bar Chart**: Visualizes response times per turn with hover latency tooltips.
+* **Recent Interaction Logs Table**:
+  - Displays Timestamp, Truncated Query, Latency (ms), Tokens (In / Out), Tools Called Badges, Model Name, Estimated Cost, and Status.
+* **Non-Blocking Telemetry**: Asynchronous fire-and-forget logging in `POST /api/chat` that adds 0ms latency to the user experience.
+* **RLS Telemetry Protection**: Restricted to `ops_manager` and internal staff; lower privilege roles (`customer_mock`) receive an Access Restricted screen.
 
 ---
 
@@ -70,9 +105,23 @@ All temporal calculations are deterministically evaluated against the dataset re
 ## 🔒 Row-Level Security (RLS) & Access Control
 
 Access control is enforced at the database layer in PostgreSQL:
-* **`ops_manager`**: Full administrative read/write access across all accounts, orders, and tickets.
+* **`ops_manager`**: Full administrative read/write access across all accounts, orders, tickets, and evaluation metrics.
 * **`support_agent`**: Global read access for cross-account troubleshooting and action proposal creation.
-* **`customer_mock`**: Scoped strictly to the active customer account (e.g., `ACCT-001` or `ACCT-002`). Queries attempting to access other accounts return empty sets.
+* **`customer_mock`**: Scoped strictly to the active customer account (e.g., `ACCT-001` or `ACCT-002`). Queries attempting to access other accounts or internal evaluation logs return access restrictions.
+
+---
+
+## 🗄️ Supabase PostgreSQL Database Schema
+
+The database consists of **6 primary tables** defined in [`supabase/schema.sql`](supabase/schema.sql):
+
+1. **`accounts`**: Customer registry, subscription plan, CSM, and contract filename.
+2. **`orders`**: Shipment details, carrier, booking timestamp, pickup window, shipment fee, and carrier fault flags.
+3. **`tickets`**: Support tickets, channel, subject, description, assigned agent, and historical context notes.
+4. **`actions`**: Two-phase confirmation gate audit log (`PENDING_CONFIRMATION` $\rightarrow$ `EXECUTED` / `REJECTED`).
+5. **`document_chunks`**: RAG vector store with **1024-dim Voyage-3 embeddings**, authority levels, and HNSW cosine distance index.
+6. **`eval_logs`**: Performance telemetry, latency, token counts, tool usage, model, cost, and error logs.
+7. **`match_documents()`**: PostgreSQL stored procedure (RPC) for semantic cosine similarity search.
 
 ---
 
@@ -135,6 +184,9 @@ npx tsx scripts/test_phase2.ts
 4. **Product Defect & Known Issue Correlation**:
    * *Query*: `"LumenWorks reported ticket TKT-502 where their 4,200-row CSV upload failed. Is this a plan limitation or a known product issue?"`
    * *Verifies*: Correlating issue with `KI-208` (intermittent bug on $>3,000$ rows) and dismissing incorrect historical ticket advice (`TKT-451`).
+5. **Observability & Evaluation Telemetry**:
+   * *Action*: Click on the **"Evaluation & Metrics" (⚡)** tab in the sidebar after running any query above.
+   * *Verifies*: Real latency, token consumption, tools invoked, and cost tracking populated live in the dashboard.
 
 ---
 
