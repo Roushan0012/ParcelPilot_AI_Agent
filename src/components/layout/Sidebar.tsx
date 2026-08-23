@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 
 interface SidebarProps {
-  activeTab: "chat" | "proactive" | "knowledge" | "actions";
-  setActiveTab: (tab: "chat" | "proactive" | "knowledge" | "actions") => void;
+  activeTab: "chat" | "proactive" | "knowledge" | "actions" | "eval";
+  setActiveTab: (tab: "chat" | "proactive" | "knowledge" | "actions" | "eval") => void;
   role: UserRole;
   setRole: (role: UserRole) => void;
   accountScope: string;
@@ -172,6 +172,20 @@ export function Sidebar({
           <div className="flex items-center gap-2.5">
             <FileCheck2 className="w-4 h-4 text-emerald-400" />
             <span>Confirmed Actions Audit Log</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("eval")}
+          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+            activeTab === "eval"
+              ? "bg-purple-500/10 text-purple-300 border border-purple-500/30 shadow-sm"
+              : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <Zap className="w-4 h-4 text-purple-400" />
+            <span>Evaluation & Metrics</span>
           </div>
         </button>
       </div>

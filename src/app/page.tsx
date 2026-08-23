@@ -7,9 +7,10 @@ import { ChatInterface } from "@/components/chat/ChatInterface";
 import { ProactiveDashboard } from "@/components/proactive/ProactiveDashboard";
 import { KnowledgeExplorer } from "@/components/knowledge/KnowledgeExplorer";
 import { ActionsAuditLog } from "@/components/actions/ActionsAuditLog";
+import { EvaluationDashboard } from "@/components/eval/EvaluationDashboard";
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"chat" | "proactive" | "knowledge" | "actions">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "proactive" | "knowledge" | "actions" | "eval">("chat");
   const [role, setRole] = useState<UserRole>("ops_manager");
   const [accountScope, setAccountScope] = useState<string>("");
   const [initialPrompt, setInitialPrompt] = useState<string>("");
@@ -52,6 +53,8 @@ export default function Home() {
         {activeTab === "knowledge" && <KnowledgeExplorer />}
 
         {activeTab === "actions" && <ActionsAuditLog />}
+
+        {activeTab === "eval" && <EvaluationDashboard role={role} />}
       </div>
     </main>
   );

@@ -134,5 +134,39 @@ export interface AgentRunResult {
   toolCalls: ToolCallEvent[];
   pendingAction: PendingAction | null;
   citations: Citation[];
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  };
+  model?: string;
+}
+
+export interface EvalLog {
+  id: string;
+  timestamp: string;
+  query: string;
+  latency_ms: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  tools_called: string[];
+  tool_count: number;
+  model: string;
+  estimated_cost_usd: number;
+  status: "success" | "error";
+  error_message?: string | null;
+  role: string;
+  account_id?: string | null;
+}
+
+export interface EvalMetricsSummary {
+  avg_latency_ms: number;
+  total_tokens: number;
+  session_tokens: number;
+  total_cost_usd: number;
+  total_queries: number;
+  error_rate_pct: number;
+  logs: EvalLog[];
 }
 

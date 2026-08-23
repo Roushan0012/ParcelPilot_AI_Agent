@@ -190,3 +190,31 @@ USING (true);
 CREATE POLICY "Allow service role write to document chunks"
 ON document_chunks FOR ALL
 USING (true);
+
+-- 6. Observability & Performance Evaluation Table
+CREATE TABLE IF NOT EXISTS eval_logs (
+    id TEXT PRIMARY KEY,
+    timestamp TIMESTAMPTZ DEFAULT NOW(),
+    query TEXT NOT NULL,
+    latency_ms INT NOT NULL,
+    input_tokens INT NOT NULL,
+    output_tokens INT NOT NULL,
+    total_tokens INT NOT NULL,
+    tools_called JSONB DEFAULT '[]'::jsonb,
+    tool_count INT DEFAULT 0,
+    model TEXT NOT NULL,
+    estimated_cost_usd NUMERIC(10, 6) NOT NULL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'success', -- 'success' | 'error'
+    error_message TEXT,
+    role TEXT NOT NULL DEFAULT 'ops_manager',
+    account_id TEXT
+);
+
+ALTER TABLE eval_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Ops Manager only access to evaluation logs"
+ON eval_logs FOR ALL
+USING (
+    COALESCE(current_setting('app.current_user_role', true), 'ops_manager') = 'ops_manager'
+);
+
